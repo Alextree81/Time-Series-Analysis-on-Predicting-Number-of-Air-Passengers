@@ -1,0 +1,258 @@
+---
+title: "STA457final project"
+output: pdf_document
+author: 'Shu Wang'
+date:   '04/03/2022'
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# 2 Introduction
+
+The data set I choose is 'AirPassengers Time Series' from kaggle.[1]
+
+This data set has 2 variables,time and number of passengers.It is a monthly-recorded data ranging from January 1949 to December 1960 with a total of 144 observations.
+
+
+```{r,message = FALSE,warning= FALSE}
+library('astsa')
+library('tseries')
+```
+
+```{r}
+library('MASS')
+```
+
+
+```{r}
+install.packages('astsa')
+library('astsa')
+
+```
+
+```{r}
+
+library(tseries)
+AirP<-read.csv('AirPassengers.csv')
+names(AirP)[2] <- 'Passengers'
+AirP = ts(AirP$Passengers,frequency=12,start=c(1949,1))
+
+
+```
+
+# 3 Statistical Methods
+
+```{r}
+plot(AirP,type = 'o',col ='dark blue',main = 'number of air passengers',ylab = 'air passengers')
+acf(AirP,lag.max = 60)
+title("ACF for number of air passengers",line=-1)
+```
+
+
+
+From the tsplot and ACF plot,it is obvious that there is a trend in the time series and the variance is non-constant.We can use box-cox transformation and data differencing to make the time series stationary and apply ARIMA model.
+
+```{r}
+t = 1:length(AirP)
+bcTransform<-boxcox(AirP ~ t,lambda = seq(-2,1,1/10),plotit = TRUE)
+lambda=bcTransform$x[which(bcTransform$y==max(bcTransform$y))]
+Air_bc<-log(AirP)
+```
+
+The 95% confidence interval for $\lambda$ includes 0.For convenience,we choose $0$ to perform a log-transformation.
+
+
+```{r}
+
+acf(Air_bc,lag.max=150)
+
+pacf(Air_bc,lag.max = 150)
+
+
+```
+
+We plot the decomposition of the transformed data,the ACF and PACF after having confirmed that the Box-Cox transformation was warranted.We also see that there is a high amount of seasonality at about the end of each year. This is also observed in the ACF of the data. The ACF takes on a shape that suggests that there is seasonality in our data. The ACF seems to suggest that we have seasonality at lag=12 as we suspected from the plot of our time series at the beginning of our analysis. We begin by differencing at lag=12 and then address the trend in our data by further differencing.
+
+```{r}
+Air_d <-diff(Air_bc,1)
+
+acf(Air_d,lag.max = 150)
+
+pacf(Air_d,lag.max = 150)
+
+```
+
+```{r}
+monthplot(Air_d)
+```
+The data is non-stationary,with some seasonality.So we take a seasonal difference.The seasonally differenced data are shown in the following figure.
+
+```{r}
+par(mfrow = c(1,1))
+Air_F <-diff(Air_d,12)
+plot.ts(Air_F,type = 'o',col = 4)
+abline(h = mean(Air_F),col = 2)
+acf(Air_F,lag.max = 150)
+
+pacf(Air_F,lag.max = 150)
+
+```
+
+```{r}
+var(AirP)
+var(Air_bc)
+var(Air_d)
+var(Air_F)
+```
+
+As we can see from above,our box-cox method and differencing stablizes the variance.Now,we perform a adf test on the final transformed data,and test the normality of this data.We observe that the normality is held and condition of stationary is satisfied.
+
+```{r}
+hist(Air_F,main = 'Histogram of transformed number of air passengers',ylab = 'number f air passengers',breaks = 20)
+adf.test(Air_F)
+```
+
+
+Our aim is to find an appropriate ARIMA model based on the ACF and PACF shown in the above ACF and PACF.The significant spike at lag 1 in the ACF suggests a seasonal MA(1) component.$Q = 1,P = 0$.It is also reasonable to believe that PACF cuts off at lag 1,and ACF tails off.So we can also purpose $P = 1,Q=0 $.For the non-seasonal components,since ACF cuts off at first lag,I purpose $q = 1,p=0$.Also,the reversed argument is that $p=1,q=0$.In conclusion,I have 2 choices (0 and 1) for p,q,P,Q.I begin with an ARIMA $(1,1,0)*(1,1,0)_{12}$
+
+
+```{r,results = 'hide',fig.keep = 'all'}
+model1 = sarima(Air_bc,1,1,0, 1,1,0,12,details = TRUE)
+
+```
+
+```{r}
+print(model1$ttable)
+```
+
+
+The following are possible suggested models:
+
+```{r,results = 'hide',fig.keep = 'all'}
+model2 = sarima(Air_bc,0,1,1, 0,1,1,12,details = TRUE)
+print(model2$ttable)
+```
+
+
+
+```{r,results = 'hide',fig.keep = 'all'}
+model3 = sarima(Air_bc,1,1,1,1,1,1,12,details = TRUE)
+print(model3$ttable)
+```
+
+```{r,results = 'hide',fig.keep = 'all'}
+model4 = sarima(Air_bc,1,1,0, 0,1,1,12,details = TRUE)
+print(model4$ttable)
+```
+
+# 4 Results
+
+## 4.1 Parameters for Proposed Models
+
+For the proposed models,we have four final SARIMA model:
+
+model 1:SARIMA $(0,1,1)*(0,1,0)_{12}$
+
+model 2:SARIMA $(2,1,1)*(0,1,1)_{12}$
+
+model 3:SARIMA $(0,1,2)*(0,1,1)_{12}$
+
+model 4:SARIMA $(1,1,0)*(0,1,1)_{12}$
+
+Which are all in the form of SARIMA$(p,d,q)*(P,D,Q)_S$
+
+where $p$ is the order of the non-seasonal AR$(p)$ model,d is the order of ordinary differencing which $=1$ in our models.$q$ is the order of the non-seasonal MA$(q)$ model.$P$ is the order of the seasonal  AR$(P)$ model,which is $0$ in our models.$D$ is the order of seasonal differencing,which is $1$ in our model.$Q$ is the order of the seasonal MA$(Q)$ model,$S$ is the order of seasonal differencing,which is 12.
+
+## 4.2 Interpretation of Parameters
+The mathematical formula is $\Phi_P(B^S)\phi(B){\nabla_S}^D \nabla^d x_t = \delta+\Theta_Q(B^S)\theta(B)\omega_t$,where $\nabla^d = (1-B)^d$ and ${\nabla_s}^D = (1-B^s)^D$,where $x_t$ is $log(AirP)$
+
+$S=12$,$D=1$,$d=1$,$P=0$ in all four models.$p=0,1,2$,$q=0,1,2$ respectively in 4 models. $Q=0,1$ respectively.
+
+## 4.3 Significance of Parameter Estimates
+
+Now we examine these models.For parameters,at 5% significance level,for model 1,2 and 4,all the coefficients in these models have p_value $\leq 0.05$.Hence,we have strong evidence against the null hypothesis that these coefficients are $0$ in model 1,2 and 4.In model 3,the p_value for $MA(2)$ is 0.64,which suggests that this coefficient is not significantly different from $0$. Since we have 3 candidates with all coefficients perform well in the model,we first rule our model 3.
+
+## 4.4 Diagnostics for Proposed Models
+For the remaining three models.If	the	model	fits	well,	the	standardized	residuals	should	behave	as an	$i.i.d$ sequence	with	mean $0$	and	variance $1$.	The ACF of residuals in model 1 shows a significant spike at lag 1,which suggests that the ACF might not be independent.The normality of the residuals are satisfied in all 3 models.
+For the Ljung-box test,model 1 suggests that approximately lag 12-36 all fails the Ljung-box test,with $p-value \leq 0.05$.Model 2 suggests that all lag except lag 5 fails the Ljung-box test.Model 4 suggests that lag 23-36 fails the Ljung-box test. 
+
+## 4.5 Model Selection
+
+```{r}
+AIC<-c(model1$AIC,model2$AIC,model3$AIC,model4$AIC)
+BIC<-c(model1$BIC,model2$BIC,model3$BIC,model4$BIC)
+AICc<-c(model1$AICc,model2$AICc,model3$AICc,model4$AICc)
+model<-c('Model 1','Model 2','Model 3','Model 4')
+
+table<-data.frame(model,AIC,BIC,AICc)
+table
+```
+
+Combine all these diagnostics together,we choose model 2 as our final model.
+
+## 4.6 Estimation
+
+```{r}
+prediction_AP <-sarima.for(Air_bc,n.ahead = 10,p=0,d=1,q=1,P=0,D=1,Q=1,S=12,col = 'blue')
+```
+We can see that this estimate fits perfectly the trend as we observed from the data.
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+```
+
+
+```{r}
+predict_of_log_AirP = as.numeric(prediction_AP$pred)
+CI_lower = as.numeric(prediction_AP$pred - qnorm(0.975)*prediction_AP$se)
+CI_upper = as.numeric(prediction_AP$pred + qnorm(0.975)*prediction_AP$se)
+Month = c('Jan 1961','Feb 1961','Mar 1961','Apr 1961','May 1961','Jun 1961','Jul 1961','Aug 1961','Sep 1961','Oct 1961')
+my_data <-data.frame(Month,predict_of_log_AirP,CI_lower,CI_upper)
+my_data
+
+```
+
+```{r}
+Air_per = mvspec(Air_bc,log = 'no')
+```
+
+```{r}
+P1<-Air_per$details[order(Air_per$details[,3],decreasing = TRUE),]
+P1[1,1];P1[2,1];P1[3,1]
+```
+
+```{r}
+library(MASS)
+Air_u1 = 2*P1[1,3]/qchisq(0.05,2)
+Air_l1 = 2*P1[1,3]/qchisq(0.95,2)
+Air_u2 = 2*P1[2,3]/qchisq(0.05,2)
+Air_l2 = 2*P1[2,3]/qchisq(0.95,2)
+Air_u3 = 2*P1[3,3]/qchisq(0.05,2)
+Air_l3 = 2*P1[3,3]/qchisq(0.95,2)
+
+Result<- data.frame(Series = c(rep('log_AirP',3)),Dominant.Freq = c(P1[1,1],P1[2,1],P1[3,1]),Spec = c(P1[1,3],P1[2,3],P1[3,3]),Lower = c(Air_l1,Air_l2,Air_l3),Upper = c(Air_u1,Air_u2,Air_u3))
+
+Result
+```
+
+We cannot establish the significance of the first peak since the periodogram ordinate is 0.0676,which lies in the confidence intervals of the second and third peak.
+
+We cannot establish the significance of the second peak,since the periodogram ordinate is 0.0201,which lies in the confidence intervals of the third peak.
+
+We cannot establish the significance of the third peak,since the periodogram ordinate is 0.0833,which lies in the confidence interval of the second peak.
+
+# 5 Discussion
+
+
+
+
+
+
+
+
+
+
